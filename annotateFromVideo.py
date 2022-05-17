@@ -20,9 +20,9 @@ def grabWithImg(mask2, last):
 
     mask[mask2 == 3] = 3  # なんでmask2を参照しているか分からんくなってきた
     # 1つ前のマスクで背景 らしかった 領域を、次のマスクでも同等に扱う
-    mask[(mask2 == 2) | (previousMask == 2)] = 2
-    mask[newmask2 == 0] = 0  # マウスで描いた白と黒は、完全に前景か、完全に背景として扱う
-    mask[newmask2 == 255] = 1
+    mask[(mask2 == 2) | (prevMask == 2)] = 2
+    mask[nextMask == 0] = 0  # マウスで描いた白と黒は、完全に前景か、完全に背景として扱う
+    mask[nextMask == 255] = 1
     mask[temp == 0] = 0  # 画像枠周辺の領域は背景として扱う
 
     cv2.grabCut(img, mask, None, bgdModel, fgdModel, 3, cv2.GC_INIT_WITH_MASK)
@@ -56,7 +56,7 @@ def draw_line(event, x, y, flags, param):
         draw_line.flag = False
     elif event == cv2.EVENT_MOUSEMOVE and draw_line.flag:
         cv2.line(img_temp_background_white, (draw_line.befx, draw_line.befy), (x, y), color, 5)
-        cv2.line(newmask2, (draw_line.befx, draw_line.befy), (x, y), color, 5)
+        cv2.line(nextMask, (draw_line.befx, draw_line.befy), (x, y), color, 5)
         draw_line.befx = x
         draw_line.befy = y
 
@@ -68,9 +68,10 @@ def trackContour(img_bin):
     ret = np.zeros(img_bin.shape[:2], np.uint8)
 
     fin = False
-    for y in range(img_bin.shape[0]):  # width
-        for x in range(img_bin.shape[1]):  # width
-            if img_bin[y][x] == 255:
+    # Get start point
+    for start_y in range(img_bin.shape[0]):  # width
+        for start_x in range(img_bin.shape[1]):  # width
+            if img_bin[start_y][start_x] == 255:
                 fin = True
                 break
         if fin:
@@ -80,13 +81,22 @@ def trackContour(img_bin):
     # 7 a 3   (入ってきた方向 + 1) % 8 が次の探索index
     # 0 1 2
     inDirection = 7
-    ret[y][x] = 128  # start地点を特別に128とする
+    ret[start_y][start_x] = 128  # start地点を特別に128とする
     fin = False
-    cornerCount = 1
+    cornerCount = 1 # 点線の描画に使う
     corners = []
+    loopCount = 0
+    loopMax = 10000
+    x = start_x
+    y = start_y
 
     while True:
         cornerCount = cornerCount + 1
+        loopCount = loopCount + 1
+        if loopCount > loopMax:
+            print("!!!ERROR:loopCount Overflow!!!")
+            print("X:",x," , Y:",y," , cornerCount:",cornerCount)
+            break
         contourGray = 129  # 枠線の色
         if cornerCount == 5:  # 5点ごとにコーナーとして扱う点は255にする
             contourGray = 255
@@ -235,8 +245,8 @@ for j, video_file in enumerate(video_files):
     labelName = video_file.parent.name
     # ex) labelName = "controller"
 
-    width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))  # 動画の画面横幅
-    height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))  # 動画の画面縦幅
+    videoW = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))  # 動画の画面横幅
+    videoH = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))  # 動画の画面縦幅
     frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))  # 総フレーム数
     frame_rate = video.get(cv2.CAP_PROP_FPS)  # フレームレート(fps)
     color = (255, 255, 255)  # マウスでの描画色
@@ -255,15 +265,14 @@ for j, video_file in enumerate(video_files):
     img_temp_background_white = img.copy()
 
     mask = np.zeros(img.shape[:2], np.uint8)
-    previousMask = np.zeros(img.shape[:2], np.uint8)
-    newmask2 = np.zeros(img.shape[:2], np.uint8)  # マウスでマスク画像を描いていく
-    newmask2 = newmask2 + 128
+    prevMask = np.zeros(img.shape[:2], np.uint8)
+    nextMask = np.zeros(img.shape[:2], np.uint8)  # マウスでマスク画像を描いていく
+    nextMask = nextMask + 128
 
     bgdModel = np.zeros((1, 65), np.float64)
     fgdModel = np.zeros((1, 65), np.float64)
 
     while True:
-        # video.set(cv2.CAP_PROP_POS_FRAMES, int(videoTime * frame_rate))
         video.set(cv2.CAP_PROP_POS_FRAMES, int((videoTime) * frame_rate))
         ret, img = video.read()
         # 動画終了
@@ -286,8 +295,8 @@ for j, video_file in enumerate(video_files):
         img_temp_background_white = img.copy()
 
         mask = mask * 0
-        newmask2 = np.zeros(img.shape[:2], np.uint8)  # マウスでマスク画像を描いていく
-        newmask2 = newmask2 + 128
+        nextMask = np.zeros(img.shape[:2], np.uint8)  # マウスでマスク画像を描いていく
+        nextMask = nextMask + 128
 
         # grabCut用の初期化
         draw_line.flag = False
@@ -305,8 +314,8 @@ for j, video_file in enumerate(video_files):
         mask3 = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8')
 
         temp = mask.copy()
-        mask[previousMask == 2] = 2
-        # cv2.imshow("prev", previousMask*50)
+        mask[prevMask == 2] = 2
+        # cv2.imshow("prev", prevMask*50)
 
         cv2.namedWindow('img_temp')
         cv2.setMouseCallback('img_temp', draw_line)
@@ -324,7 +333,7 @@ for j, video_file in enumerate(video_files):
             # mask[mask == 255] = 1 # いらない気がする
 
             cv2.imshow('raw', img_raw)
-            cv2.imshow('newmask2', newmask2)
+            cv2.imshow('nextMask', nextMask)
             cv2.imshow('img_temp', img_temp_background_white)
 
             key = cv2.waitKey(20)
@@ -347,7 +356,7 @@ for j, video_file in enumerate(video_files):
         if next_video:
             break
         # cv2.destroyAllWindows()
-        previousMask = mask  # 1つ過去のマスク画像を、次のマスク画像の背景らしい領域として利用
+        prevMask = mask  # 1つ過去のマスク画像を、次のマスク画像の背景らしい領域として利用
 
         startTime = time.time()
 
